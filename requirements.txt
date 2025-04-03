@@ -1,0 +1,7 @@
+Flask==3.0.2
+requests==2.31.0
+python-dotenv==1.0.1
+crewai
+langchain==0.1.14
+beautifulsoup4==4.12.3
+lxml==5.2.1
