@@ -1,7 +1,7 @@
-Flask==3.0.2
-requests==2.31.0
+crewai==0.86.0
+langchain==0.3.12
+gradio==5.23.3
 python-dotenv==1.0.1
-crewai
-langchain==0.1.14
-beautifulsoup4==4.12.3
-lxml==5.2.1
+openai==1.68.2
+tiktoken==0.7.0
+requests==2.32.3
