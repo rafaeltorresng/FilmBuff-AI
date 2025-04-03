@@ -4,7 +4,6 @@ import uuid
 import threading
 import time
 from datetime import datetime
-from Movies_Agent import get_recommendations
 
 app = Flask(__name__)
 
@@ -47,9 +46,29 @@ def search():
     return redirect(url_for('show_results', task_id=task_id))
 
 def process_recommendations(task_id, query, include_people):
-    """Background process to get recommendations"""
+    """Simulate the recommendation process for testing"""
     try:
-        result = get_recommendations(query, include_people)
+        # Simulate processing time
+        time.sleep(5)
+        
+        # For testing purposes, return a static result
+        # In production, this would call your agent-based recommendation system
+        result = f"""# Movie Recommendations for: "{query}"
+
+## Found Movies:
+- **Interstellar** (2014) - A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.
+- **The Matrix** (1999) - A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.
+- **Inception** (2010) - A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.
+
+## Recommendations:
+Based on your interest in {query}, you might also enjoy:
+
+1. **Arrival** (2016) - A linguist is recruited by the military to communicate with alien lifeforms after twelve mysterious spacecraft appear around the world.
+2. **Looper** (2012) - In a future where time travel has been invented, a hitman working for a crime syndicate is tasked with eliminating targets sent from the future.
+
+These selections share thematic elements with your query while offering unique takes on the science fiction genre.
+"""
+        
         tasks[task_id]['status'] = 'completed'
         tasks[task_id]['result'] = result
     except Exception as e:
@@ -76,7 +95,7 @@ def task_status(task_id):
         'query': tasks[task_id]['query']
     })
 
-# Clean up old tasks periodically (in a production app, use a proper job scheduler)
+# Clean up old tasks periodically
 @app.before_request
 def cleanup_old_tasks():
     current_time = time.time()

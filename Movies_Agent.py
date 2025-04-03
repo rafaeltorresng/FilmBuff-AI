@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
-from langchain.tools import tool
+from langchain.tools import tool, BaseTool
 from typing import Optional, Dict, List, Union
 import requests
 from functools import lru_cache
@@ -29,9 +29,10 @@ def make_tmdb_request(endpoint, params=None):
         response.raise_for_status()  # Raise an exception for 4XX/5XX responses
         return response.json()
     except requests.exceptions.RequestException as e:
+        response_status = getattr(e.response, 'status_code', None)
         # Handle rate limiting
-        if response.status_code == 429:
-            retry_after = int(response.headers.get("Retry-After", 1))
+        if response_status == 429:
+            retry_after = int(e.response.headers.get("Retry-After", 1))
             time.sleep(retry_after)
             return make_tmdb_request(endpoint, params)
         
@@ -40,7 +41,7 @@ def make_tmdb_request(endpoint, params=None):
 
 # ========== TOOLS ==========
 
-@tool("Search Movies Tool")
+@tool
 def search_movies(
     query: str,
     max_results: int = 5,
@@ -75,7 +76,7 @@ def search_movies(
         "url": f"https://www.themoviedb.org/movie/{item['id']}"
     } for item in results]
 
-@tool("Search TV Shows Tool")
+@tool
 def search_tv_shows(
     query: str,
     max_results: int = 5,
@@ -110,7 +111,7 @@ def search_tv_shows(
         "url": f"https://www.themoviedb.org/tv/{item['id']}"
     } for item in results]
 
-@tool("Get Movie Details Tool")
+@tool
 def get_movie_details(movie_id: int) -> Dict:
     """
     Get detailed information about a specific movie by ID.
@@ -166,7 +167,7 @@ def get_movie_details(movie_id: int) -> Dict:
         "url": f"https://www.themoviedb.org/movie/{data.get('id')}"
     }
 
-@tool("Get TV Show Details Tool")
+@tool
 def get_tv_show_details(show_id: int) -> Dict:
     """
     Get detailed information about a specific TV show by ID.
@@ -228,7 +229,7 @@ def get_tv_show_details(show_id: int) -> Dict:
         "url": f"https://www.themoviedb.org/tv/{data.get('id')}"
     }
 
-@tool("Discover Movies Tool")
+@tool
 def discover_movies(
     genre: Optional[str] = None,
     year: Optional[int] = None,
@@ -268,7 +269,7 @@ def discover_movies(
         "url": f"https://www.themoviedb.org/movie/{item['id']}"
     } for item in results]
 
-@tool("Discover TV Shows Tool")
+@tool
 def discover_tv_shows(
     genre: Optional[str] = None,
     year: Optional[int] = None,
@@ -308,7 +309,7 @@ def discover_tv_shows(
         "url": f"https://www.themoviedb.org/tv/{item['id']}"
     } for item in results]
 
-@tool("Get Trending Content Tool")
+@tool
 def get_trending_content(
     media_type: str = "all",  # Options: "all", "movie", "tv", "person"
     time_window: str = "week",  # Options: "day", "week"
@@ -331,7 +332,7 @@ def get_trending_content(
         "url": f"https://www.themoviedb.org/{item.get('media_type', 'movie')}/{item['id']}"
     } for item in results]
 
-@tool("Search Person Tool")
+@tool
 def search_person(
     query: str,
     max_results: int = 5
@@ -352,7 +353,7 @@ def search_person(
         "url": f"https://www.themoviedb.org/person/{item['id']}"
     } for item in results]
 
-@tool("Get Person Details Tool")
+@tool
 def get_person_details(person_id: int) -> Dict:
     """
     Get detailed information about a specific person by ID.
@@ -412,7 +413,7 @@ def get_person_details(person_id: int) -> Dict:
         "url": f"https://www.themoviedb.org/person/{data.get('id')}"
     }
 
-@tool("Find Similar Content Tool")
+@tool
 def find_similar_content(
     content_id: int,
     content_type: str,  # "movie" or "tv"
@@ -486,12 +487,60 @@ def get_tv_genre_id(genre_name: str) -> Optional[int]:
     return None
 
 # ========== AGENTS ==========
+# Create explicit BaseTool objects
+def create_tool(func):
+    """Convert a function to a BaseTool compatible with CrewAI"""
+    return {
+        "name": func.__name__,
+        "description": func.__doc__,
+        "func": func
+    }
+
+# Create tools map for agent setup
+tools_dict = {
+    "search_movies": search_movies,
+    "search_tv_shows": search_tv_shows,
+    "discover_movies": discover_movies,
+    "discover_tv_shows": discover_tv_shows,
+    "get_movie_details": get_movie_details,
+    "get_tv_show_details": get_tv_show_details,
+    "get_trending_content": get_trending_content,
+    "search_person": search_person,
+    "get_person_details": get_person_details,
+    "find_similar_content": find_similar_content,
+}
 
 # Research Agent - Finds content based on criteria
 research_agent = Agent(
     role="Content Researcher",
     goal="Find movies and TV shows that match the user's criteria",
-    tools=[search_movies, search_tv_shows, discover_movies, discover_tv_shows, get_trending_content],
+    tools=[
+        {
+            "name": "search_movies",
+            "description": "Search for movies based on keywords, year, or genre.",
+            "func": search_movies
+        },
+        {
+            "name": "search_tv_shows",
+            "description": "Search for TV shows based on keywords, year, or genre.",
+            "func": search_tv_shows
+        },
+        {
+            "name": "discover_movies",
+            "description": "Discover movies based on specific criteria without a keyword search.",
+            "func": discover_movies
+        },
+        {
+            "name": "discover_tv_shows",
+            "description": "Discover TV shows based on specific criteria without a keyword search.",
+            "func": discover_tv_shows
+        },
+        {
+            "name": "get_trending_content",
+            "description": "Get trending movies, TV shows, or people.",
+            "func": get_trending_content
+        }
+    ],
     backstory="You are a meticulous researcher specialized in finding audiovisual content based on specific criteria.",
     verbose=True
 )
@@ -500,7 +549,28 @@ research_agent = Agent(
 details_agent = Agent(
     role="Details Specialist",
     goal="Provide detailed information about movies and TV shows",
-    tools=[get_movie_details, get_tv_show_details, get_person_details, find_similar_content],
+    tools=[
+        {
+            "name": "get_movie_details",
+            "description": "Get detailed information about a specific movie by ID.",
+            "func": get_movie_details
+        },
+        {
+            "name": "get_tv_show_details",
+            "description": "Get detailed information about a specific TV show by ID.",
+            "func": get_tv_show_details
+        },
+        {
+            "name": "get_person_details",
+            "description": "Get detailed information about a specific person by ID.",
+            "func": get_person_details
+        },
+        {
+            "name": "find_similar_content",
+            "description": "Find content similar to a specific movie or TV show.",
+            "func": find_similar_content
+        }
+    ],
     backstory="You are a film and television expert with encyclopedic knowledge about audiovisual productions.",
     verbose=True
 )
@@ -509,7 +579,33 @@ details_agent = Agent(
 recommendation_agent = Agent(
     role="Recommendation Consultant",
     goal="Create personalized recommendations based on user preferences",
-    tools=[search_movies, search_tv_shows, discover_movies, discover_tv_shows, find_similar_content],
+    tools=[
+        {
+            "name": "search_movies",
+            "description": "Search for movies based on keywords, year, or genre.",
+            "func": search_movies
+        },
+        {
+            "name": "search_tv_shows",
+            "description": "Search for TV shows based on keywords, year, or genre.",
+            "func": search_tv_shows
+        },
+        {
+            "name": "discover_movies",
+            "description": "Discover movies based on specific criteria without a keyword search.",
+            "func": discover_movies
+        },
+        {
+            "name": "discover_tv_shows",
+            "description": "Discover TV shows based on specific criteria without a keyword search.",
+            "func": discover_tv_shows
+        },
+        {
+            "name": "find_similar_content",
+            "description": "Find content similar to a specific movie or TV show.",
+            "func": find_similar_content
+        }
+    ],
     backstory="You are a renowned film critic, known for recommending movies and shows that perfectly match audience tastes.",
     verbose=True
 )
@@ -518,7 +614,18 @@ recommendation_agent = Agent(
 people_agent = Agent(
     role="People Specialist",
     goal="Find information about actors, directors, and other film industry personalities",
-    tools=[search_person, get_person_details],
+    tools=[
+        {
+            "name": "search_person",
+            "description": "Search for actors, directors, or other film industry personalities.",
+            "func": search_person
+        },
+        {
+            "name": "get_person_details",
+            "description": "Get detailed information about a specific person by ID.",
+            "func": get_person_details
+        }
+    ],
     backstory="You are a celebrity expert with deep knowledge about film industry professionals and their careers.",
     verbose=True
 )
