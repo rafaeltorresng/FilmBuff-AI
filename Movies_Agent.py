@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
 from langchain.tools import tool, BaseTool
@@ -6,6 +7,7 @@ from typing import Optional, Dict, List, Union
 import requests
 from functools import lru_cache
 import time
+from langchain_openai import ChatOpenAI
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +15,12 @@ load_dotenv()
 # TMDB API Configuration
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
+
+llm = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.3,
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 # ========== API HANDLER ==========
 
@@ -487,28 +495,6 @@ def get_tv_genre_id(genre_name: str) -> Optional[int]:
     return None
 
 # ========== AGENTS ==========
-# Create explicit BaseTool objects
-def create_tool(func):
-    """Convert a function to a BaseTool compatible with CrewAI"""
-    return {
-        "name": func.__name__,
-        "description": func.__doc__,
-        "func": func
-    }
-
-# Create tools map for agent setup
-tools_dict = {
-    "search_movies": search_movies,
-    "search_tv_shows": search_tv_shows,
-    "discover_movies": discover_movies,
-    "discover_tv_shows": discover_tv_shows,
-    "get_movie_details": get_movie_details,
-    "get_tv_show_details": get_tv_show_details,
-    "get_trending_content": get_trending_content,
-    "search_person": search_person,
-    "get_person_details": get_person_details,
-    "find_similar_content": find_similar_content,
-}
 
 # Research Agent - Finds content based on criteria
 research_agent = Agent(
@@ -542,7 +528,8 @@ research_agent = Agent(
         }
     ],
     backstory="You are a meticulous researcher specialized in finding audiovisual content based on specific criteria.",
-    verbose=True
+    verbose=True,
+    llm=llm
 )
 
 # Details Agent - Provides in-depth information
@@ -572,7 +559,8 @@ details_agent = Agent(
         }
     ],
     backstory="You are a film and television expert with encyclopedic knowledge about audiovisual productions.",
-    verbose=True
+    verbose=True,
+    llm=llm
 )
 
 # Recommendation Agent - Creates personalized recommendations
@@ -607,7 +595,8 @@ recommendation_agent = Agent(
         }
     ],
     backstory="You are a renowned film critic, known for recommending movies and shows that perfectly match audience tastes.",
-    verbose=True
+    verbose=True,
+    llm=llm
 )
 
 # People Agent - Specialized in actors, directors and crew
@@ -627,74 +616,308 @@ people_agent = Agent(
         }
     ],
     backstory="You are a celebrity expert with deep knowledge about film industry professionals and their careers.",
-    verbose=True
+    verbose=True,
+    llm=llm
 )
 
 # ========== CREW ==========
 
 entertainment_crew = Crew(
     agents=[research_agent, details_agent, recommendation_agent, people_agent],
-    tasks=[
-        Task(
-            description="Find 3 thriller movies with plot twists released after 2010",
-            expected_output="A list of movies with title, year, synopsis, and rating",
-            agent=research_agent
-        ),
-        Task(
-            description="Analyze the found movies and provide details about cast and direction",
-            expected_output="Detailed information about each movie, including cast and direction",
-            agent=details_agent
-        ),
-        Task(
-            description="Based on previous choices, recommend 2 additional movies the user might like",
-            expected_output="Personalized recommendations with justification",
-            agent=recommendation_agent
-        )
-    ],
+    tasks=[],  # Tasks are added dynamically based on query type
     process=Process.sequential,
     verbose=2
 )
 
-# ========== EXECUTION ==========
+# ========== QUERY INTENT CLASSIFICATION ==========
 
-def get_recommendations(user_query: str, include_people: bool = False):
-    """Function to handle user queries and return recommendations"""
-    # Create dynamic tasks based on user query
+def classify_query_intent(query: str) -> str:
+    """Classifies the intention of the user's query"""
+    query = query.lower()
+    
+    # Information about a specific movie/show
+    if any(pattern in query for pattern in ["tell me about", "information about", "details of", "details about", 
+                                           "what is", "tell me more", "synopsis of", "plot of", "describe"]):
+        # Check if it's about a person or movie
+        if any(term in query for term in ["actor", "actress", "director", "who played", "who is", "who directed"]):
+            return "person_info"
+        return "movie_info"
+    
+    # Person-related queries
+    if any(pattern in query for pattern in ["who is", "actor", "actress", "director", "cast of", "stars in", 
+                                          "appeared in", "filmography"]):
+        return "person_info"
+    
+    # Trending content queries
+    if any(pattern in query for pattern in ["trending", "popular", "top rated", "best of", "this week", 
+                                          "this month", "new releases", "what's hot", "what is popular"]):
+        return "trending"
+    
+    # Genre-specific queries
+    if any(f"best {genre}" in query for genre in ["action", "comedy", "drama", "horror", "sci-fi", "thriller", 
+                                               "romance", "documentary", "animation"]):
+        return "genre_specific"
+    
+    # Review or rating queries
+    if any(pattern in query for pattern in ["review", "rating", "score", "how good is", "worth watching"]):
+        return "reviews"
+    
+    # Recommendation queries (default)
+    return "recommendations"
+
+# ========== SPECIALIZED QUERY HANDLERS ==========
+
+def get_movie_information(query: str) -> str:
+    """Handles queries about specific movies or TV shows"""
+    # Extract the movie/show title
+    title = extract_title_from_query(query)
+    
     tasks = [
         Task(
-            description=f"Based on the user request: '{user_query}', find relevant content",
-            expected_output="List of movies or TV shows that match the request",
+            description=f"Find movies or TV shows titled '{title}' or closest match",
+            expected_output="Details about the movie/show including its ID",
             agent=research_agent
         ),
         Task(
-            description="Analyze the found content and provide relevant details",
-            expected_output="Detailed information about each item",
+            description=f"Get comprehensive details about '{title}' including plot, cast, and reviews",
+            expected_output="Detailed information formatted for user presentation",
+            agent=details_agent
+        )
+    ]
+    
+    entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+def get_person_information(query: str) -> str:
+    """Handles queries about specific people (actors, directors, etc.)"""
+    # Extract the person's name
+    name = extract_person_from_query(query)
+    
+    tasks = [
+        Task(
+            description=f"Find information about '{name}' in the film/TV industry",
+            expected_output="Basic profile and career information",
+            agent=people_agent
+        ),
+        Task(
+            description=f"Compile detailed information about '{name}' including their notable work",
+            expected_output="Comprehensive profile with filmography highlights",
             agent=details_agent
         ),
         Task(
-            description="Create personalized recommendations based on the results",
-            expected_output="Final list with justified recommendations",
+            description=f"Suggest notable films/shows featuring '{name}' that the user might enjoy",
+            expected_output="Curated recommendations of their best work",
             agent=recommendation_agent
         )
     ]
     
-    # Add people search if needed
-    if include_people or any(keyword in user_query.lower() for keyword in ["actor", "director", "actress", "star", "cast"]):
+    entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+def get_trending_information(query: str) -> str:
+    """Handles queries about trending or popular content"""
+    media_type = "movie"
+    time_period = "week"
+    
+    # Try to detect if they want TV shows specifically
+    if any(term in query.lower() for term in ["tv", "television", "series", "shows"]):
+        media_type = "tv"
+    
+    # Try to detect time period
+    if any(term in query.lower() for term in ["today", "daily", "right now"]):
+        time_period = "day"
+    
+    tasks = [
+        Task(
+            description=f"Find trending {media_type}s for this {time_period}",
+            expected_output="List of currently popular content with basic information",
+            agent=research_agent
+        ),
+        Task(
+            description="Provide more context about why these items are trending and what makes them notable",
+            expected_output="Detailed analysis of each trending item",
+            agent=details_agent
+        ),
+        Task(
+            description="Based on these trends, identify emerging patterns or themes in popular content",
+            expected_output="Insights about current audience preferences and entertainment trends",
+            agent=recommendation_agent
+        )
+    ]
+    
+    entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+def get_genre_recommendations(query: str) -> str:
+    """Handles requests for recommendations in specific genres"""
+    # Extract genre from query
+    genres = ["action", "comedy", "drama", "horror", "sci-fi", "thriller", 
+              "romance", "documentary", "animation", "fantasy", "mystery"]
+    
+    detected_genre = next((genre for genre in genres if genre in query.lower()), "popular")
+    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', query)
+    year = int(year_match.group(1)) if year_match else None
+    
+    tasks = [
+        Task(
+            description=f"Find top-rated {detected_genre} content" + (f" from {year}" if year else ""),
+            expected_output="List of highly-regarded titles in this genre",
+            agent=research_agent
+        ),
+        Task(
+            description="Analyze these selections to identify what makes them standout examples of the genre",
+            expected_output="Detailed information about plot, style, and reception",
+            agent=details_agent
+        ),
+        Task(
+            description="Create personalized recommendations based on the best examples of this genre",
+            expected_output="Curated suggestions with justifications",
+            agent=recommendation_agent
+        )
+    ]
+    
+    entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+def get_review_information(query: str) -> str:
+    """Handles requests for reviews or ratings"""
+    # Extract the title
+    title = extract_title_from_query(query)
+    
+    tasks = [
+        Task(
+            description=f"Find '{title}' and its critical reception",
+            expected_output="Basic information including ratings and review sources",
+            agent=research_agent
+        ),
+        Task(
+            description=f"Compile critical consensus and audience response for '{title}'",
+            expected_output="Summary of reviews, ratings, and audience reception",
+            agent=details_agent
+        )
+    ]
+    
+    entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+def get_recommendations(query: str, include_people: bool = False) -> str:
+    """Handles standard recommendation requests"""
+    tasks = [
+        Task(
+            description=f"Based on '{query}', find relevant content that matches these preferences",
+            expected_output="List of movies or shows matching the criteria",
+            agent=research_agent
+        ),
+        Task(
+            description="Analyze these matches to identify common themes and elements",
+            expected_output="Detailed information about the suggested content",
+            agent=details_agent
+        ),
+        Task(
+            description="Generate personalized recommendations based on these findings",
+            expected_output="Final recommendations with explanations of why they were chosen",
+            agent=recommendation_agent
+        )
+    ]
+    
+    if include_people or any(term in query.lower() for term in ["actor", "actress", "director", "cast", "star"]):
         tasks.insert(1, Task(
-            description=f"Find information about relevant people mentioned in '{user_query}'",
-            expected_output="Information about actors, directors or other film professionals",
+            description="Find information about relevant people mentioned in the query",
+            expected_output="Details about actors, directors or other key personnel",
             agent=people_agent
         ))
     
-    # Update crew with new tasks
     entertainment_crew.tasks = tasks
+    return entertainment_crew.kickoff()
+
+# ========== HELPER FUNCTIONS FOR ENTITY EXTRACTION ==========
+
+def extract_title_from_query(query: str) -> str:
+    """Extracts the movie/show title from the query"""
+    # Common patterns that might precede a title
+    patterns = ["about", "of", "for", "information on", "details of", "tell me about", 
+                "what is", "how good is", "review of", "synopsis of", "plot of", "describe"]
     
-    # Execute the crew tasks
-    result = entertainment_crew.kickoff()
-    return result
+    # Try to extract based on patterns
+    for pattern in patterns:
+        if f" {pattern} " in f" {query.lower()} ":
+            parts = query.lower().split(f" {pattern} ", 1)
+            if len(parts) > 1 and parts[1]:
+                return parts[1].strip()
+    
+    # If no pattern was found, try removing common question words
+    clean_query = query.lower()
+    for prefix in ["tell me", "how is", "what is", "what about", "how about"]:
+        clean_query = clean_query.replace(prefix, "").strip()
+    
+    return clean_query
+
+def extract_person_from_query(query: str) -> str:
+    """Extracts a person's name from the query"""
+    # Common patterns that might indicate a person reference
+    patterns = ["who is", "about", "information on", "details about", "tell me about", 
+                "actor", "actress", "director", "who played", "who directed"]
+    
+    # Try to extract based on patterns
+    for pattern in patterns:
+        if f" {pattern} " in f" {query.lower()} ":
+            parts = query.lower().split(f" {pattern} ", 1)
+            if len(parts) > 1 and parts[1]:
+                return parts[1].strip()
+    
+    # If no clear indicator, return the query without common prefixes
+    clean_query = query.lower()
+    for prefix in ["tell me about", "who is", "information about", "details about"]:
+        clean_query = clean_query.replace(prefix, "").strip()
+    
+    return clean_query
+
+# ========== MAIN INTERFACE FUNCTION ==========
+
+def process_entertainment_query(user_query: str, include_people: bool = False) -> str:
+    """Main function to process user queries by intent"""
+    try:
+        # Determine the intent of the query
+        intent = classify_query_intent(user_query)
+        
+        # Route to appropriate handler based on intent
+        if intent == "movie_info":
+            return get_movie_information(user_query)
+        elif intent == "person_info":
+            return get_person_information(user_query)
+        elif intent == "trending":
+            return get_trending_information(user_query)
+        elif intent == "genre_specific":
+            return get_genre_recommendations(user_query)
+        elif intent == "reviews":
+            return get_review_information(user_query)
+        else:
+            # Default to standard recommendations
+            return get_recommendations(user_query, include_people)
+    except Exception as e:
+        # Error handling
+        print(f"Error processing query: {str(e)}")
+        return f"""# Sorry, there was an error processing your request
+
+I encountered a problem while trying to answer: "{user_query}"
+
+Error details: {str(e)}
+
+Please try:
+1. Rephrasing your question
+2. Being more specific about movie or show titles
+3. Using simpler queries until the system is more stable
+
+Thank you for your understanding!
+"""
+
+# Redirect original function to use the new system
+def get_recommendations(user_query: str, include_people: bool = False) -> str:
+    """Legacy function maintained for compatibility"""
+    return process_entertainment_query(user_query, include_people)
 
 # Example query - in a real application, this would come from user input
 if __name__ == "__main__":
-    user_query = "Recommend science fiction movies about time travel"
-    result = get_recommendations(user_query)
+    user_query = "Tell me about Interstellar"
+    result = process_entertainment_query(user_query)
     print(result)

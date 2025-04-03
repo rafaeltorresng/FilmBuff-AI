@@ -46,34 +46,23 @@ def search():
     return redirect(url_for('show_results', task_id=task_id))
 
 def process_recommendations(task_id, query, include_people):
-    """Simulate the recommendation process for testing"""
+    """Process the recommendation task"""
     try:
-        # Simulate processing time
-        time.sleep(5)
+        # Remover essa simulação e chamar a função real
+        # result = f"""# Movie Recommendations for: "{query}"...""" (remover isso)
         
-        # For testing purposes, return a static result
-        # In production, this would call your agent-based recommendation system
-        result = f"""# Movie Recommendations for: "{query}"
-
-## Found Movies:
-- **Interstellar** (2014) - A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.
-- **The Matrix** (1999) - A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.
-- **Inception** (2010) - A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.
-
-## Recommendations:
-Based on your interest in {query}, you might also enjoy:
-
-1. **Arrival** (2016) - A linguist is recruited by the military to communicate with alien lifeforms after twelve mysterious spacecraft appear around the world.
-2. **Looper** (2012) - In a future where time travel has been invented, a hitman working for a crime syndicate is tasked with eliminating targets sent from the future.
-
-These selections share thematic elements with your query while offering unique takes on the science fiction genre.
-"""
+        # Usar a função real de Movies_Agent.py
+        from Movies_Agent import process_entertainment_query
+        
+        # Chamar a função apropriada baseada no tipo de consulta
+        result = process_entertainment_query(query, include_people)
         
         tasks[task_id]['status'] = 'completed'
         tasks[task_id]['result'] = result
     except Exception as e:
         tasks[task_id]['status'] = 'error'
         tasks[task_id]['error'] = str(e)
+        print(f"Error processing query: {str(e)}")
 
 @app.route('/results/<task_id>')
 def show_results(task_id):
