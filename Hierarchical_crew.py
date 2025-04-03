@@ -16,7 +16,7 @@ from Movies_Agent import (
     research_agent, details_agent, recommendation_agent, people_agent
 )
 
-# Carregar variáveis de ambiente
+# Load environment variables
 load_dotenv()
 
 # ========== CACHE SYSTEM ==========
@@ -35,7 +35,7 @@ class QueryCache:
                     self.cache = pickle.load(f)
                 self._clean_expired()
             except Exception as e:
-                print(f"Erro ao carregar cache: {e}")
+                print(f"Error loading cache: {e}")
                 self.cache = {}
     
     def save_cache(self):
@@ -43,7 +43,7 @@ class QueryCache:
             with open(self.cache_file, "wb") as f:
                 pickle.dump(self.cache, f)
         except Exception as e:
-            print(f"Erro ao salvar cache: {e}")
+            print(f"Error saving cache: {e}")
     
     def _clean_expired(self):
         now = datetime.now()
@@ -71,43 +71,43 @@ class QueryCache:
         self.cache[query_hash] = (result, datetime.now())
         self.save_cache()
 
-# Instanciando o cache
+# Instantiate cache
 query_cache = QueryCache()
 
 # ========== QUERY CLASSIFIER ==========
 
 def classify_query_intent(query: str) -> Tuple[str, List[str]]:
     """
-    Classifica a consulta para determinar seu tipo e agentes necessários.
-    Retorna: (tipo de consulta, lista de agentes necessários)
+    Classifies the query to determine its type and required agents.
+    Returns: (query type, list of required agents)
     """
     query_lower = query.lower()
     
-    # Padrões simples que podem ser identificados com regras
-    trending_patterns = ["em alta", "tendência", "trending", "popular", "melhores filmes", "novidades"]
-    search_patterns = ["encontre", "busque", "procure", "pesquise", "lista de"]
-    detail_patterns = ["detalhes", "informações", "sobre o filme", "sobre a série", "sinopse", "elenco", "quando foi lançado"]
-    recommendation_patterns = ["recomende", "similar", "parecido", "como", "do mesmo estilo", "do mesmo gênero"]
-    person_patterns = ["ator", "atriz", "diretor", "quem", "personagem", "artista", "elenco"]
+    # Simple patterns that can be identified with rules
+    trending_patterns = ["trending", "popular", "best movies", "what's hot", "top rated"]
+    search_patterns = ["find", "search", "look for", "list of"]
+    detail_patterns = ["details", "information", "about the movie", "about the series", "synopsis", "cast", "when was it released"]
+    recommendation_patterns = ["recommend", "similar", "like", "same style", "same genre"]
+    person_patterns = ["actor", "actress", "director", "who", "character", "artist", "cast"]
     
-    # Identificadores de filmes/séries específicos
-    specific_title = any(title in query_lower for title in ["star wars", "vingadores", "harry potter", "senhor dos anéis", "game of thrones"])
+    # Specific movie/series identifiers
+    specific_title = any(title in query_lower for title in ["star wars", "avengers", "harry potter", "lord of the rings", "game of thrones"])
     
-    # Classificação do tipo de consulta
-    query_type = "simple"  # padrão
+    # Query type classification
+    query_type = "simple"  # default
     required_agents = []
     
-    # Detecção de consulta de tendências
+    # Trending query detection
     if any(pattern in query_lower for pattern in trending_patterns):
         query_type = "trending"
-        return query_type, []  # Não precisa de agentes, o manager pode responder
+        return query_type, []  # No agents needed, manager can respond
     
-    # Detecção de busca simples
+    # Simple search detection
     elif any(pattern in query_lower for pattern in search_patterns) and not specific_title:
         query_type = "search"
-        return query_type, []  # Não precisa de agentes, o manager pode responder
+        return query_type, []  # No agents needed, manager can respond
     
-    # Se pede detalhes sobre um título específico
+    # If requesting details about a specific title
     elif any(pattern in query_lower for pattern in detail_patterns) or specific_title:
         query_type = "complex"
         required_agents.append("details_agent")
@@ -115,22 +115,22 @@ def classify_query_intent(query: str) -> Tuple[str, List[str]]:
         if any(pattern in query_lower for pattern in recommendation_patterns):
             required_agents.append("recommendation_agent")
             
-    # Se pede recomendações
+    # If asking for recommendations
     elif any(pattern in query_lower for pattern in recommendation_patterns):
         query_type = "complex"
         required_agents.append("recommendation_agent")
         
-    # Se pergunta sobre pessoas
+    # If asking about people
     elif any(pattern in query_lower for pattern in person_patterns):
         query_type = "complex"
         required_agents.append("people_agent")
     
-    # Consulta complexa ou ambígua
+    # Complex or ambiguous query
     else:
         query_type = "complex"
         required_agents.append("research_agent")
     
-    # Se não tiver nenhum agente identificado em uma consulta complexa, use o research_agent como padrão
+    # If no agent identified in a complex query, use research_agent as default
     if query_type == "complex" and not required_agents:
         required_agents.append("research_agent")
     
@@ -138,167 +138,167 @@ def classify_query_intent(query: str) -> Tuple[str, List[str]]:
 
 # ========== MANAGER AGENT (SIMPLIFIED) ==========
 
-# Manager Agent otimizado com instruções reduzidas
+# Optimized Manager Agent with reduced instructions
 manager_agent = Agent(
     role="Entertainment Concierge",
-    goal="Analisar consultas sobre filmes e programas de TV e fornecer ou coordenar respostas adequadas",
+    goal="Analyze queries about movies and TV shows and provide or coordinate appropriate responses",
     tools=[
         SearchMoviesTool(),
         SearchTVShowsTool(),
         GetTrendingContentTool(),
         SearchPersonTool(),
     ],
-    backstory="Especialista em entretenimento que fornece informações sobre filmes e programas de TV, delegando consultas complexas a especialistas quando necessário.",
+    backstory="Entertainment specialist providing information about movies and TV shows, delegating complex queries to specialists when necessary.",
     verbose=True,
     llm=llm
 )
 
-# ========== FUNÇÕES DE TAREFAS OTIMIZADAS ==========
+# ========== OPTIMIZED TASK FUNCTIONS ==========
 
 def create_simple_manager_task(query: str) -> Task:
-    """Cria uma task simples para o manager responder diretamente"""
+    """Creates a simple task for the manager to respond directly"""
     return Task(
         description=f"""
-        Responda diretamente à consulta do usuário: "{query}"
+        Respond directly to the user's query: "{query}"
         
-        Use suas ferramentas disponíveis para fornecer uma resposta direta e completa.
-        Formate sua resposta de forma clara e organizada para apresentação ao usuário.
+        Use your available tools to provide a direct and complete response.
+        Format your response clearly and in an organized way for presentation to the user.
         """,
-        expected_output="Uma resposta direta e informativa para a consulta do usuário",
+        expected_output="A direct and informative response to the user's query",
         agent=manager_agent
     )
 
 def create_delegation_manager_task(query: str, required_agents: List[str]) -> Task:
-    """Cria uma task para o manager delegar para agentes específicos"""
-    # Determina quais agentes devem ser incluídos nas instruções
+    """Creates a task for the manager to delegate to specific agents"""
+    # Determines which agents should be included in the instructions
     agents_info = ""
     
     if "research_agent" in required_agents:
         agents_info += """
-        RESEARCH AGENT: [Instruções para pesquisar filmes ou programas de TV relevantes para a consulta]
+        RESEARCH AGENT: [Instructions for researching movies or TV shows relevant to the query]
         """
     
     if "details_agent" in required_agents:
         agents_info += """
-        DETAILS AGENT: [Instruções para fornecer informações detalhadas sobre o conteúdo identificado]
+        DETAILS AGENT: [Instructions for providing detailed information about the identified content]
         """
     
     if "recommendation_agent" in required_agents:
         agents_info += """
-        RECOMMENDATION AGENT: [Instruções para recomendar conteúdo similar ou relacionado]
+        RECOMMENDATION AGENT: [Instructions for recommending similar or related content]
         """
     
     if "people_agent" in required_agents:
         agents_info += """
-        PEOPLE AGENT: [Instruções para fornecer informações sobre pessoas relacionadas]
+        PEOPLE AGENT: [Instructions for providing information about related people]
         """
     
     return Task(
         description=f"""
-        Analise esta consulta do usuário: "{query}"
+        Analyze this user query: "{query}"
         
-        Você deve criar um plano de delegação para os agentes especializados.
+        You need to create a delegation plan for the specialized agents.
         
-        Sua resposta DEVE seguir este formato:
+        Your response MUST follow this format:
         
         ```
-        PLANO DE DELEGAÇÃO:
-        [Breve descrição do seu plano para responder à consulta]
+        DELEGATION PLAN:
+        [Brief description of your plan to answer the query]
         
         {agents_info}
         ```
         
-        Forneça instruções específicas e claras para cada agente listado acima.
+        Provide specific and clear instructions for each agent listed above.
         """,
-        expected_output="Um plano de delegação com instruções claras para os agentes especializados",
+        expected_output="A delegation plan with clear instructions for specialized agents",
         agent=manager_agent
     )
 
 def create_optimized_tasks(agent_name: str, query: str, instructions: str) -> Task:
-    """Cria tarefas otimizadas para agentes especializados"""
+    """Creates optimized tasks for specialized agents"""
     
-    # Limita o tamanho das instruções para economizar tokens
+    # Limits the size of instructions to save tokens
     max_instructions_length = 300
     if len(instructions) > max_instructions_length:
         instructions = instructions[:max_instructions_length] + "..."
     
     task_description = f"""
-    Consulta do usuário: "{query}"
+    User query: "{query}"
     
-    Instruções: {instructions}
+    Instructions: {instructions}
     
-    Forneça uma resposta concisa e informativa.
+    Provide a concise and informative response.
     """
     
     if agent_name == "research_agent":
         return Task(
             description=task_description,
-            expected_output="Lista de conteúdo relevante",
+            expected_output="List of relevant content",
             agent=research_agent
         )
     elif agent_name == "details_agent":
         return Task(
             description=task_description,
-            expected_output="Informações detalhadas sobre o conteúdo",
+            expected_output="Detailed information about the content",
             agent=details_agent
         )
     elif agent_name == "recommendation_agent":
         return Task(
             description=task_description,
-            expected_output="Recomendações personalizadas",
+            expected_output="Personalized recommendations",
             agent=recommendation_agent
         )
     elif agent_name == "people_agent":
         return Task(
             description=task_description,
-            expected_output="Informações sobre pessoas da indústria",
+            expected_output="Information about industry people",
             agent=people_agent
         )
     else:
-        raise ValueError(f"Agente desconhecido: {agent_name}")
+        raise ValueError(f"Unknown agent: {agent_name}")
 
 def create_synthesis_task(query: str, results: str) -> Task:
-    """Cria tarefa para sintetizar resultados dos agentes"""
+    """Creates a task to synthesize agent results"""
     
-    # Trunca os resultados se forem muito longos para economizar tokens
+    # Truncates results if they are too long to save tokens
     max_results_length = 2000
     if len(results) > max_results_length:
-        results = results[:max_results_length] + "\n...[resultados truncados para economizar tokens]..."
+        results = results[:max_results_length] + "\n...[results truncated to save tokens]..."
     
     return Task(
         description=f"""
-        Consulta original do usuário: "{query}"
+        Original user query: "{query}"
         
-        Resultados dos agentes especializados:
+        Results from specialized agents:
         {results}
         
-        Sintetize essas informações em uma resposta final bem formatada.
-        Elimine redundâncias e organize as informações de forma lógica.
+        Synthesize this information into a well-formatted final response.
+        Eliminate redundancies and organize the information logically.
         """,
-        expected_output="Resposta final sintetizada",
+        expected_output="Synthesized final response",
         agent=manager_agent
     )
 
-# ========== PROCESSAMENTO OTIMIZADO ==========
+# ========== OPTIMIZED PROCESSING ==========
 
 def process_optimized_query(query: str) -> str:
-    """Processa consultas de forma otimizada para economizar tokens"""
+    """Processes queries optimized to save tokens"""
     
-    # Verifica cache primeiro
+    # Check cache first
     cached_result = query_cache.get(query)
     if cached_result:
-        print("Usando resultado em cache")
+        print("Using cached result")
         return cached_result
     
     try:
-        print(f"Processando consulta: '{query}'")
+        print(f"Processing query: '{query}'")
         
-        # Classifica a consulta
+        # Classify the query
         query_type, required_agents = classify_query_intent(query)
         
-        # Para consultas simples, use apenas o manager
+        # For simple queries, use only the manager
         if query_type in ["simple", "trending", "search"]:
-            print(f"Classificada como consulta simples: {query_type}")
+            print(f"Classified as simple query: {query_type}")
             
             crew = Crew(
                 agents=[manager_agent],
@@ -311,10 +311,10 @@ def process_optimized_query(query: str) -> str:
             query_cache.set(query, result)
             return result
         
-        # Para consultas complexas, use o sistema hierárquico
-        print(f"Classificada como consulta complexa, requer agentes: {', '.join(required_agents)}")
+        # For complex queries, use the hierarchical system
+        print(f"Classified as complex query, requires agents: {', '.join(required_agents)}")
         
-        # 1. Manager cria plano de delegação
+        # 1. Manager creates delegation plan
         manager_crew = Crew(
             agents=[manager_agent],
             tasks=[create_delegation_manager_task(query, required_agents)],
@@ -324,7 +324,7 @@ def process_optimized_query(query: str) -> str:
         
         delegation_plan = str(manager_crew.kickoff())
         
-        # 2. Extrai instruções para agentes
+        # 2. Extract instructions for agents
         tasks = []
         for agent_name in required_agents:
             pattern = re.compile(f"{agent_name.replace('_agent', '').upper()} AGENT:(.*?)(?:RESEARCH AGENT:|DETAILS AGENT:|RECOMMENDATION AGENT:|PEOPLE AGENT:|$)", re.DOTALL | re.IGNORECASE)
@@ -334,14 +334,14 @@ def process_optimized_query(query: str) -> str:
                 instructions = match.group(1).strip()
                 tasks.append(create_optimized_tasks(agent_name, query, instructions))
         
-        # Se não conseguir extrair tarefas, use fallback
+        # If unable to extract tasks, use fallback
         if not tasks:
-            print("Usando tarefas fallback baseadas no tipo de consulta")
+            print("Using fallback tasks based on query type")
             for agent_name in required_agents:
-                default_instruction = f"Forneça informações sobre '{query}'"
+                default_instruction = f"Provide information about '{query}'"
                 tasks.append(create_optimized_tasks(agent_name, query, default_instruction))
         
-        # 3. Executa tarefas dos agentes especializados
+        # 3. Execute specialized agent tasks
         specialist_crew = Crew(
             agents=[research_agent, details_agent, recommendation_agent, people_agent],
             tasks=tasks,
@@ -351,7 +351,7 @@ def process_optimized_query(query: str) -> str:
         
         specialist_results = str(specialist_crew.kickoff())
         
-        # 4. Manager sintetiza os resultados
+        # 4. Manager synthesizes results
         synthesis_crew = Crew(
             agents=[manager_agent],
             tasks=[create_synthesis_task(query, specialist_results)],
@@ -361,36 +361,36 @@ def process_optimized_query(query: str) -> str:
         
         final_result = str(synthesis_crew.kickoff())
         
-        # Salva no cache
+        # Save to cache
         query_cache.set(query, final_result)
         
         return final_result
         
     except Exception as e:
-        print(f"Erro ao processar consulta: {str(e)}")
-        return f"""# Erro ao processar consulta
+        print(f"Error processing query: {str(e)}")
+        return f"""# Error processing query
 
-Ocorreu um problema ao processar: "{query}"
-Erro: {str(e)}
+A problem occurred while processing: "{query}"
+Error: {str(e)}
 
-Por favor, tente reformular sua pergunta.
+Please try rephrasing your question.
 """
 
-# ========== FUNÇÃO PRINCIPAL ==========
+# ========== MAIN FUNCTION ==========
 
 if __name__ == "__main__":
-    print("Testando sistema hierárquico otimizado para economia de tokens...")
+    print("Testing optimized hierarchical system for token savings...")
     
-    # Teste com uma consulta simples
-    print("\n\n==== TESTE 1: CONSULTA SIMPLES ====")
-    simple_query = "Quais filmes estão em alta esta semana?"
+    # Test with a simple query
+    print("\n\n==== TEST 1: SIMPLE QUERY ====")
+    simple_query = "What movies are trending this week?"
     simple_result = process_optimized_query(simple_query)
-    print("\nResultado da consulta simples:")
+    print("\nSimple query result:")
     print(simple_result)
     
-    # Teste com uma consulta complexa 
-    print("\n\n==== TESTE 2: CONSULTA COMPLEXA ====")
-    complex_query = "Quero detalhes completos sobre Star Wars: O Império Contra-Ataca"
+    # Test with a complex query 
+    print("\n\n==== TEST 2: COMPLEX QUERY ====")
+    complex_query = "I want complete details about Star Wars: The Empire Strikes Back"
     complex_result = process_optimized_query(complex_query)
-    print("\nResultado da consulta complexa:")
+    print("\nComplex query result:")
     print(complex_result)

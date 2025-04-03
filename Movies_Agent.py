@@ -829,7 +829,7 @@ Thank you for your understanding!
 
 # Opcional: Função para teste
 if __name__ == "__main__":
-    print("Testando agentes com CrewAI...")
+    print("Testing agents with CrewAI...")
     test_query = "Tell me about Star Wars: The Empire Strikes Back"
     result = process_entertainment_query(test_query)
     print("Resultado:")
