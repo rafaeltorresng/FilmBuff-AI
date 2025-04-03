@@ -2,17 +2,15 @@ import os
 import re
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
-from crewai.tools import BaseTool  # Importação correta de BaseTool
+from crewai.tools import BaseTool
 from typing import Optional, Dict, List, Union
 import requests
 from functools import lru_cache
 import time
 from langchain_openai import ChatOpenAI
 
-# Load environment variables
 load_dotenv()
 
-# TMDB API Configuration
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 BASE_URL = "https://api.themoviedb.org/3"
 
@@ -22,23 +20,18 @@ llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-# ========== API HANDLER ==========
-
 def make_tmdb_request(endpoint, params=None):
-    """Make a request to TMDB API with error handling and rate limiting"""
     if params is None:
         params = {}
     
-    # Ensure API key is included
     params["api_key"] = TMDB_API_KEY
     
     try:
         response = requests.get(f"{BASE_URL}/{endpoint}", params=params)
-        response.raise_for_status()  # Raise an exception for 4XX/5XX responses
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         response_status = getattr(e.response, 'status_code', None)
-        # Handle rate limiting
         if response_status == 429:
             retry_after = int(e.response.headers.get("Retry-After", 1))
             time.sleep(retry_after)
@@ -47,13 +40,8 @@ def make_tmdb_request(endpoint, params=None):
         print(f"API request error: {str(e)}")
         return {"error": str(e), "results": []}
 
-# ========== HELPER FUNCTIONS ==========
-
-# Cache genre lookups to avoid repetitive string matching
 @lru_cache(maxsize=128)
 def get_genre_id(genre_name: str) -> Optional[int]:
-    """Get movie genre ID from name with flexible matching"""
-    # English genre names with exact IDs
     genres = {
         "Action": 28, "Adventure": 12, "Animation": 16,
         "Comedy": 35, "Crime": 80, "Documentary": 99,
@@ -63,12 +51,10 @@ def get_genre_id(genre_name: str) -> Optional[int]:
         "Thriller": 53, "War": 10752, "Western": 37
     }
     
-    # Try exact match
     normalized_genre = genre_name.title()
     if normalized_genre in genres:
         return genres[normalized_genre]
     
-    # Try partial match
     for key, value in genres.items():
         if key.lower() in genre_name.lower():
             return value
@@ -77,7 +63,6 @@ def get_genre_id(genre_name: str) -> Optional[int]:
 
 @lru_cache(maxsize=128)
 def get_tv_genre_id(genre_name: str) -> Optional[int]:
-    """Get TV genre ID from name with flexible matching"""
     genres = {
         "Action & Adventure": 10759, "Animation": 16, "Comedy": 35,
         "Crime": 80, "Documentary": 99, "Drama": 18,
@@ -86,30 +71,21 @@ def get_tv_genre_id(genre_name: str) -> Optional[int]:
         "Soap": 10766, "Talk": 10767, "War & Politics": 10768
     }
     
-    # Try exact match
     normalized_genre = genre_name.title()
     if normalized_genre in genres:
         return genres[normalized_genre]
     
-    # Try partial match
     for key, value in genres.items():
         if key.lower() in genre_name.lower():
             return value
             
     return None
 
-# ========== TOOLS ==========
-# Cada função será convertida em uma classe que herda de BaseTool
-
 class SearchMoviesTool(BaseTool):
     name: str = "search_movies"
     description: str = "Search for movies based on keywords, year, or genre."
     
     def _run(self, query: str, max_results: int = 5, year: Optional[int] = None, genre: Optional[str] = None) -> List[Dict]:
-        """
-        Search for movies based on keywords, year, or genre.
-        Example: "thriller movies with plot twist"
-        """
         params = {
             "query": query,
             "language": "en-US"
@@ -139,10 +115,6 @@ class SearchTVShowsTool(BaseTool):
     description: str = "Search for TV shows based on keywords, year, or genre."
     
     def _run(self, query: str, max_results: int = 5, year: Optional[int] = None, genre: Optional[str] = None) -> List[Dict]:
-        """
-        Search for TV shows based on keywords, year, or genre.
-        Example: "sci-fi shows with time travel"
-        """
         params = {
             "query": query,
             "language": "en-US"
@@ -172,10 +144,6 @@ class GetMovieDetailsTool(BaseTool):
     description: str = "Get detailed information about a specific movie by ID."
     
     def _run(self, movie_id: int) -> Dict:
-        """
-        Get detailed information about a specific movie by ID.
-        Example: "Get details for movie 550" (Fight Club)
-        """
         data = make_tmdb_request(
             f"movie/{movie_id}",
             {"language": "en-US", "append_to_response": "credits,similar,reviews,videos"}
@@ -184,21 +152,18 @@ class GetMovieDetailsTool(BaseTool):
         if "error" in data:
             return {"error": data["error"]}
         
-        # Extract trailer if available
         trailer = ""
         for video in data.get("videos", {}).get("results", []):
             if video.get("type") == "Trailer" and video.get("site") == "YouTube":
                 trailer = f"https://www.youtube.com/watch?v={video['key']}"
                 break
         
-        # Extract key crew members
         director = next((c["name"] for c in data.get("credits", {}).get("crew", []) 
                        if c.get("job") == "Director"), "Unknown")
         
         writers = [c["name"] for c in data.get("credits", {}).get("crew", [])
                   if c.get("job") in ["Writer", "Screenplay"]]
         
-        # Extract reviews
         reviews = []
         for review in data.get("reviews", {}).get("results", [])[:2]:
             reviews.append({
@@ -231,10 +196,6 @@ class GetTVShowDetailsTool(BaseTool):
     description: str = "Get detailed information about a specific TV show by ID."
     
     def _run(self, show_id: int) -> Dict:
-        """
-        Get detailed information about a specific TV show by ID.
-        Example: "Get details for show 1399" (Game of Thrones)
-        """
         data = make_tmdb_request(
             f"tv/{show_id}", 
             {"language": "en-US", "append_to_response": "credits,similar,reviews,videos"}
@@ -243,27 +204,23 @@ class GetTVShowDetailsTool(BaseTool):
         if "error" in data:
             return {"error": data["error"]}
         
-        # Extract trailer if available
         trailer = ""
         for video in data.get("videos", {}).get("results", []):
             if video.get("type") == "Trailer" and video.get("site") == "YouTube":
                 trailer = f"https://www.youtube.com/watch?v={video['key']}"
                 break
         
-        # Extract key crew members
         creators = [p["name"] for p in data.get("created_by", [])]
         
-        # Extract seasons info
         seasons = []
         for season in data.get("seasons", []):
-            if season.get("season_number") > 0:  # Skip specials
+            if season.get("season_number") > 0:
                 seasons.append({
                     "season_number": season.get("season_number"),
                     "episode_count": season.get("episode_count"),
                     "air_date": season.get("air_date")
                 })
         
-        # Extract reviews
         reviews = []
         for review in data.get("reviews", {}).get("results", [])[:2]:
             reviews.append({
@@ -297,10 +254,6 @@ class DiscoverMoviesTool(BaseTool):
     
     def _run(self, genre: Optional[str] = None, year: Optional[int] = None, 
              sort_by: str = "popularity.desc", min_rating: float = 0.0, max_results: int = 5) -> List[Dict]:
-        """
-        Discover movies based on specific criteria without a keyword search.
-        Example: "Find popular action movies from 2022"
-        """
         params = {
             "language": "en-US",
             "sort_by": sort_by,
@@ -335,10 +288,6 @@ class DiscoverTVShowsTool(BaseTool):
     
     def _run(self, genre: Optional[str] = None, year: Optional[int] = None,
              sort_by: str = "popularity.desc", min_rating: float = 0.0, max_results: int = 5) -> List[Dict]:
-        """
-        Discover TV shows based on specific criteria without a keyword search.
-        Example: "Find popular drama series from 2021"
-        """
         params = {
             "language": "en-US",
             "sort_by": sort_by,
@@ -372,10 +321,6 @@ class GetTrendingContentTool(BaseTool):
     description: str = "Get trending movies, TV shows, or people."
     
     def _run(self, media_type: str = "all", time_window: str = "week", max_results: int = 5) -> List[Dict]:
-        """
-        Get trending movies, TV shows, or people.
-        Example: "What movies are trending this week?"
-        """
         data = make_tmdb_request(f"trending/{media_type}/{time_window}")
         results = data.get("results", [])[:max_results]
         
@@ -394,10 +339,6 @@ class SearchPersonTool(BaseTool):
     description: str = "Search for actors, directors, or other film industry personalities."
     
     def _run(self, query: str, max_results: int = 5) -> List[Dict]:
-        """
-        Search for actors, directors, or other film industry personalities.
-        Example: "Find information about Christopher Nolan"
-        """
         data = make_tmdb_request("search/person", {"query": query, "language": "en-US"})
         results = data.get("results", [])[:max_results]
         
@@ -415,10 +356,6 @@ class GetPersonDetailsTool(BaseTool):
     description: str = "Get detailed information about a specific person by ID."
     
     def _run(self, person_id: int) -> Dict:
-        """
-        Get detailed information about a specific person by ID.
-        Example: "Get details for person 138" (Quentin Tarantino)
-        """
         data = make_tmdb_request(
             f"person/{person_id}",
             {"language": "en-US", "append_to_response": "movie_credits,tv_credits"}
@@ -427,7 +364,6 @@ class GetPersonDetailsTool(BaseTool):
         if "error" in data:
             return {"error": data["error"]}
         
-        # Get notable movies (as director or actor)
         notable_movies = []
         if data.get("movie_credits", {}).get("cast"):
             for movie in sorted(data["movie_credits"]["cast"], key=lambda x: x.get("popularity", 0), reverse=True)[:5]:
@@ -438,7 +374,6 @@ class GetPersonDetailsTool(BaseTool):
                     "year": movie.get("release_date", "").split("-")[0] if movie.get("release_date") else ""
                 })
         
-        # Get notable movies as crew (director, writer, etc.)
         if len(notable_movies) < 5 and data.get("movie_credits", {}).get("crew"):
             for movie in sorted(data["movie_credits"]["crew"], key=lambda x: x.get("popularity", 0), reverse=True):
                 if len(notable_movies) >= 5:
@@ -450,7 +385,6 @@ class GetPersonDetailsTool(BaseTool):
                     "year": movie.get("release_date", "").split("-")[0] if movie.get("release_date") else ""
                 })
         
-        # Get notable TV shows
         notable_tv = []
         if data.get("tv_credits", {}).get("cast"):
             for show in sorted(data["tv_credits"]["cast"], key=lambda x: x.get("popularity", 0), reverse=True)[:3]:
@@ -478,10 +412,6 @@ class FindSimilarContentTool(BaseTool):
     description: str = "Find content similar to a specific movie or TV show."
     
     def _run(self, content_id: int, content_type: str, max_results: int = 5) -> List[Dict]:
-        """
-        Find content similar to a specific movie or TV show.
-        Example: "Find shows similar to Breaking Bad"
-        """
         data = make_tmdb_request(f"{content_type}/{content_id}/similar")
         results = data.get("results", [])[:max_results]
         
@@ -494,9 +424,6 @@ class FindSimilarContentTool(BaseTool):
             "url": f"https://www.themoviedb.org/{content_type}/{item['id']}"
         } for item in results]
 
-# ========== AGENTS ==========
-
-# Research Agent - Finds content based on criteria
 research_agent = Agent(
     role="Content Researcher",
     goal="Find movies and TV shows that match the user's criteria",
@@ -512,7 +439,6 @@ research_agent = Agent(
     llm=llm
 )
 
-# Details Agent - Provides in-depth information
 details_agent = Agent(
     role="Details Specialist",
     goal="Provide detailed information about movies and TV shows",
@@ -527,7 +453,6 @@ details_agent = Agent(
     llm=llm
 )
 
-# Recommendation Agent - Creates personalized recommendations
 recommendation_agent = Agent(
     role="Recommendation Consultant",
     goal="Create personalized recommendations based on user preferences",
@@ -543,7 +468,6 @@ recommendation_agent = Agent(
     llm=llm
 )
 
-# People Agent - Specialized in actors, directors and crew
 people_agent = Agent(
     role="People Specialist",
     goal="Find information about actors, directors, and other film industry personalities",
@@ -556,55 +480,40 @@ people_agent = Agent(
     llm=llm
 )
 
-# O resto do código permanece igual (Crew, funções de classificação de intenção, etc.)
 entertainment_crew = Crew(
     agents=[research_agent, details_agent, recommendation_agent, people_agent],
-    tasks=[],  # Tasks are added dynamically based on query type
+    tasks=[],
     process=Process.sequential,
     verbose=True
 )
 
-# ========== QUERY INTENT CLASSIFICATION ==========
-
 def classify_query_intent(query: str) -> str:
-    """Classifies the intention of the user's query"""
     query = query.lower()
     
-    # Information about a specific movie/show
     if any(pattern in query for pattern in ["tell me about", "information about", "details of", "details about", 
                                            "what is", "tell me more", "synopsis of", "plot of", "describe"]):
-        # Check if it's about a person or movie
         if any(term in query for term in ["actor", "actress", "director", "who played", "who is", "who directed"]):
             return "person_info"
         return "movie_info"
     
-    # Person-related queries
     if any(pattern in query for pattern in ["who is", "actor", "actress", "director", "cast of", "stars in", 
                                           "appeared in", "filmography"]):
         return "person_info"
     
-    # Trending content queries
     if any(pattern in query for pattern in ["trending", "popular", "top rated", "best of", "this week", 
                                           "this month", "new releases", "what's hot", "what is popular"]):
         return "trending"
     
-    # Genre-specific queries
     if any(f"best {genre}" in query for genre in ["action", "comedy", "drama", "horror", "sci-fi", "thriller", 
                                                "romance", "documentary", "animation"]):
         return "genre_specific"
     
-    # Review or rating queries
     if any(pattern in query for pattern in ["review", "rating", "score", "how good is", "worth watching"]):
         return "reviews"
     
-    # Recommendation queries (default)
     return "recommendations"
 
-# ========== SPECIALIZED QUERY HANDLERS ==========
-
 def get_movie_information(query: str) -> str:
-    """Handles queries about specific movies or TV shows"""
-    # Extract the movie/show title
     title = extract_title_from_query(query)
     
     tasks = [
@@ -623,22 +532,16 @@ def get_movie_information(query: str) -> str:
     entertainment_crew.tasks = tasks
     return entertainment_crew.kickoff()
 
-# O restante das funções (get_person_information, get_trending_information, etc.) permanece inalterado
-
 def extract_title_from_query(query: str) -> str:
-    """Extracts the movie/show title from the query"""
-    # Common patterns that might precede a title
     patterns = ["about", "of", "for", "information on", "details of", "tell me about", 
                 "what is", "how good is", "review of", "synopsis of", "plot of", "describe"]
     
-    # Try to extract based on patterns
     for pattern in patterns:
         if f" {pattern} " in f" {query.lower()} ":
             parts = query.lower().split(f" {pattern} ", 1)
             if len(parts) > 1 and parts[1]:
                 return parts[1].strip()
     
-    # If no pattern was found, try removing common question words
     clean_query = query.lower()
     for prefix in ["tell me", "how is", "what is", "what about", "how about", "i want information"]:
         clean_query = clean_query.replace(prefix, "").strip()
@@ -646,19 +549,15 @@ def extract_title_from_query(query: str) -> str:
     return clean_query
 
 def extract_person_from_query(query: str) -> str:
-    """Extracts a person's name from the query"""
-    # Common patterns that might indicate a person reference
     patterns = ["who is", "about", "information on", "details about", "tell me about", 
                 "actor", "actress", "director", "who played", "who directed"]
     
-    # Try to extract based on patterns
     for pattern in patterns:
         if f" {pattern} " in f" {query.lower()} ":
             parts = query.lower().split(f" {pattern} ", 1)
             if len(parts) > 1 and parts[1]:
                 return parts[1].strip()
     
-    # If no clear indicator, return the query without common prefixes
     clean_query = query.lower()
     for prefix in ["tell me about", "who is", "information about", "details about"]:
         clean_query = clean_query.replace(prefix, "").strip()
@@ -666,8 +565,6 @@ def extract_person_from_query(query: str) -> str:
     return clean_query
 
 def get_person_information(query: str) -> str:
-    """Handles queries about people in the film industry"""
-    # Extract the person's name
     person_name = extract_person_from_query(query)
     
     tasks = [
@@ -687,7 +584,6 @@ def get_person_information(query: str) -> str:
     return entertainment_crew.kickoff()
 
 def get_trending_information(query: str) -> str:
-    """Handles queries about trending or popular content"""
     time_window = "week"
     if "month" in query.lower() or "year" in query.lower():
         time_window = "day"
@@ -717,8 +613,6 @@ def get_trending_information(query: str) -> str:
     return entertainment_crew.kickoff()
 
 def get_genre_recommendations(query: str) -> str:
-    """Handles genre-specific recommendation queries"""
-    # Extract genre from query
     genre_keywords = ["action", "comedy", "drama", "horror", "sci-fi", "thriller", 
                      "romance", "documentary", "animation"]
     
@@ -741,8 +635,6 @@ def get_genre_recommendations(query: str) -> str:
     return entertainment_crew.kickoff()
 
 def get_review_information(query: str) -> str:
-    """Handles queries about reviews or ratings"""
-    # Extract the title
     title = extract_title_from_query(query)
     
     tasks = [
@@ -762,7 +654,6 @@ def get_review_information(query: str) -> str:
     return entertainment_crew.kickoff()
 
 def get_recommendations(query: str, include_people: bool = False) -> str:
-    """Handles general recommendation queries"""
     tasks = [
         Task(
             description=f"Research content related to '{query}' to understand user preferences",
@@ -776,7 +667,6 @@ def get_recommendations(query: str, include_people: bool = False) -> str:
         )
     ]
     
-    # Add person-related task if requested
     if include_people:
         tasks.append(
             Task(
@@ -788,15 +678,11 @@ def get_recommendations(query: str, include_people: bool = False) -> str:
     
     entertainment_crew.tasks = tasks
     return entertainment_crew.kickoff()
-# ========== MAIN INTERFACE FUNCTION ==========
 
 def process_entertainment_query(user_query: str, include_people: bool = False) -> str:
-    """Main function to process user queries by intent"""
     try:
-        # Determine the intent of the query
         intent = classify_query_intent(user_query)
         
-        # Route to appropriate handler based on intent
         if intent == "movie_info":
             return get_movie_information(user_query)
         elif intent == "person_info":
@@ -808,10 +694,8 @@ def process_entertainment_query(user_query: str, include_people: bool = False) -
         elif intent == "reviews":
             return get_review_information(user_query)
         else:
-            # Default to standard recommendations
             return get_recommendations(user_query, include_people)
     except Exception as e:
-        # Error handling
         print(f"Error processing query: {str(e)}")
         return f"""# Sorry, there was an error processing your request
 
@@ -827,7 +711,6 @@ Please try:
 Thank you for your understanding!
 """
 
-# Opcional: Função para teste
 if __name__ == "__main__":
     print("Testing agents with CrewAI...")
     test_query = "Tell me about Star Wars: The Empire Strikes Back"

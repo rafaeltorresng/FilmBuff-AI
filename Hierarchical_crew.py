@@ -16,10 +16,7 @@ from Movies_Agent import (
     research_agent, details_agent, recommendation_agent, people_agent
 )
 
-# Load environment variables
 load_dotenv()
-
-# ========== CACHE SYSTEM ==========
 
 class QueryCache:
     def __init__(self, cache_file="query_cache.pkl", expiry_days=7):
@@ -71,43 +68,30 @@ class QueryCache:
         self.cache[query_hash] = (result, datetime.now())
         self.save_cache()
 
-# Instantiate cache
 query_cache = QueryCache()
 
-# ========== QUERY CLASSIFIER ==========
-
 def classify_query_intent(query: str) -> Tuple[str, List[str]]:
-    """
-    Classifies the query to determine its type and required agents.
-    Returns: (query type, list of required agents)
-    """
     query_lower = query.lower()
     
-    # Simple patterns that can be identified with rules
     trending_patterns = ["trending", "popular", "best movies", "what's hot", "top rated"]
     search_patterns = ["find", "search", "look for", "list of"]
     detail_patterns = ["details", "information", "about the movie", "about the series", "synopsis", "cast", "when was it released"]
     recommendation_patterns = ["recommend", "similar", "like", "same style", "same genre"]
     person_patterns = ["actor", "actress", "director", "who", "character", "artist", "cast"]
     
-    # Specific movie/series identifiers
     specific_title = any(title in query_lower for title in ["star wars", "avengers", "harry potter", "lord of the rings", "game of thrones"])
     
-    # Query type classification
-    query_type = "simple"  # default
+    query_type = "simple"
     required_agents = []
     
-    # Trending query detection
     if any(pattern in query_lower for pattern in trending_patterns):
         query_type = "trending"
-        return query_type, []  # No agents needed, manager can respond
+        return query_type, []
     
-    # Simple search detection
     elif any(pattern in query_lower for pattern in search_patterns) and not specific_title:
         query_type = "search"
-        return query_type, []  # No agents needed, manager can respond
+        return query_type, []
     
-    # If requesting details about a specific title
     elif any(pattern in query_lower for pattern in detail_patterns) or specific_title:
         query_type = "complex"
         required_agents.append("details_agent")
@@ -115,30 +99,23 @@ def classify_query_intent(query: str) -> Tuple[str, List[str]]:
         if any(pattern in query_lower for pattern in recommendation_patterns):
             required_agents.append("recommendation_agent")
             
-    # If asking for recommendations
     elif any(pattern in query_lower for pattern in recommendation_patterns):
         query_type = "complex"
         required_agents.append("recommendation_agent")
         
-    # If asking about people
     elif any(pattern in query_lower for pattern in person_patterns):
         query_type = "complex"
         required_agents.append("people_agent")
     
-    # Complex or ambiguous query
     else:
         query_type = "complex"
         required_agents.append("research_agent")
     
-    # If no agent identified in a complex query, use research_agent as default
     if query_type == "complex" and not required_agents:
         required_agents.append("research_agent")
     
     return query_type, required_agents
 
-# ========== MANAGER AGENT (SIMPLIFIED) ==========
-
-# Optimized Manager Agent with reduced instructions
 manager_agent = Agent(
     role="Entertainment Concierge",
     goal="Analyze queries about movies and TV shows and provide or coordinate appropriate responses",
@@ -153,10 +130,7 @@ manager_agent = Agent(
     llm=llm
 )
 
-# ========== OPTIMIZED TASK FUNCTIONS ==========
-
 def create_simple_manager_task(query: str) -> Task:
-    """Creates a simple task for the manager to respond directly"""
     return Task(
         description=f"""
         Respond directly to the user's query: "{query}"
@@ -169,8 +143,6 @@ def create_simple_manager_task(query: str) -> Task:
     )
 
 def create_delegation_manager_task(query: str, required_agents: List[str]) -> Task:
-    """Creates a task for the manager to delegate to specific agents"""
-    # Determines which agents should be included in the instructions
     agents_info = ""
     
     if "research_agent" in required_agents:
@@ -215,9 +187,6 @@ def create_delegation_manager_task(query: str, required_agents: List[str]) -> Ta
     )
 
 def create_optimized_tasks(agent_name: str, query: str, instructions: str) -> Task:
-    """Creates optimized tasks for specialized agents"""
-    
-    # Limits the size of instructions to save tokens
     max_instructions_length = 300
     if len(instructions) > max_instructions_length:
         instructions = instructions[:max_instructions_length] + "..."
@@ -258,9 +227,6 @@ def create_optimized_tasks(agent_name: str, query: str, instructions: str) -> Ta
         raise ValueError(f"Unknown agent: {agent_name}")
 
 def create_synthesis_task(query: str, results: str) -> Task:
-    """Creates a task to synthesize agent results"""
-    
-    # Truncates results if they are too long to save tokens
     max_results_length = 2000
     if len(results) > max_results_length:
         results = results[:max_results_length] + "\n...[results truncated to save tokens]..."
@@ -279,12 +245,7 @@ def create_synthesis_task(query: str, results: str) -> Task:
         agent=manager_agent
     )
 
-# ========== OPTIMIZED PROCESSING ==========
-
 def process_optimized_query(query: str) -> str:
-    """Processes queries optimized to save tokens"""
-    
-    # Check cache first
     cached_result = query_cache.get(query)
     if cached_result:
         print("Using cached result")
@@ -293,10 +254,8 @@ def process_optimized_query(query: str) -> str:
     try:
         print(f"Processing query: '{query}'")
         
-        # Classify the query
         query_type, required_agents = classify_query_intent(query)
         
-        # For simple queries, use only the manager
         if query_type in ["simple", "trending", "search"]:
             print(f"Classified as simple query: {query_type}")
             
@@ -311,10 +270,8 @@ def process_optimized_query(query: str) -> str:
             query_cache.set(query, result)
             return result
         
-        # For complex queries, use the hierarchical system
         print(f"Classified as complex query, requires agents: {', '.join(required_agents)}")
         
-        # 1. Manager creates delegation plan
         manager_crew = Crew(
             agents=[manager_agent],
             tasks=[create_delegation_manager_task(query, required_agents)],
@@ -324,7 +281,6 @@ def process_optimized_query(query: str) -> str:
         
         delegation_plan = str(manager_crew.kickoff())
         
-        # 2. Extract instructions for agents
         tasks = []
         for agent_name in required_agents:
             pattern = re.compile(f"{agent_name.replace('_agent', '').upper()} AGENT:(.*?)(?:RESEARCH AGENT:|DETAILS AGENT:|RECOMMENDATION AGENT:|PEOPLE AGENT:|$)", re.DOTALL | re.IGNORECASE)
@@ -334,14 +290,12 @@ def process_optimized_query(query: str) -> str:
                 instructions = match.group(1).strip()
                 tasks.append(create_optimized_tasks(agent_name, query, instructions))
         
-        # If unable to extract tasks, use fallback
         if not tasks:
             print("Using fallback tasks based on query type")
             for agent_name in required_agents:
                 default_instruction = f"Provide information about '{query}'"
                 tasks.append(create_optimized_tasks(agent_name, query, default_instruction))
         
-        # 3. Execute specialized agent tasks
         specialist_crew = Crew(
             agents=[research_agent, details_agent, recommendation_agent, people_agent],
             tasks=tasks,
@@ -351,7 +305,6 @@ def process_optimized_query(query: str) -> str:
         
         specialist_results = str(specialist_crew.kickoff())
         
-        # 4. Manager synthesizes results
         synthesis_crew = Crew(
             agents=[manager_agent],
             tasks=[create_synthesis_task(query, specialist_results)],
@@ -361,7 +314,6 @@ def process_optimized_query(query: str) -> str:
         
         final_result = str(synthesis_crew.kickoff())
         
-        # Save to cache
         query_cache.set(query, final_result)
         
         return final_result
@@ -376,19 +328,15 @@ Error: {str(e)}
 Please try rephrasing your question.
 """
 
-# ========== MAIN FUNCTION ==========
-
 if __name__ == "__main__":
     print("Testing optimized hierarchical system for token savings...")
     
-    # Test with a simple query
     print("\n\n==== TEST 1: SIMPLE QUERY ====")
     simple_query = "What movies are trending this week?"
     simple_result = process_optimized_query(simple_query)
     print("\nSimple query result:")
     print(simple_result)
     
-    # Test with a complex query 
     print("\n\n==== TEST 2: COMPLEX QUERY ====")
     complex_query = "I want complete details about Star Wars: The Empire Strikes Back"
     complex_result = process_optimized_query(complex_query)
