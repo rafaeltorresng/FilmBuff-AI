@@ -1,7 +1,9 @@
 crewai==0.86.0
-langchain==0.3.12
+langchain_openai==0.1.5
+openai==1.68.2
 gradio==5.23.3
 python-dotenv==1.0.1
-openai==1.68.2
-tiktoken==0.7.0
 requests==2.32.3
+pydantic==2.7.3
+tiktoken==0.7.0
+pickle-mixin==1.0.2
