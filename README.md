@@ -26,10 +26,10 @@ Film Buff is an intelligent assistant for movie and TV show information, built w
    python Gradio.py
 
 ## 🤖 Agent System
--Manager Agent: Analyzes user intent and delegates to a specialist
--Information Agent: Provides detailed data about movies, TV shows, and people
--Recommendation Agent: Suggests content based on preferences and similarities
--Trends Agent: Reports on currently popular movies and TV shows
+- Manager Agent: Analyzes user intent and delegates to a specialist
+- Information Agent: Provides detailed data about movies, TV shows, and people
+- Recommendation Agent: Suggests content based on preferences and similarities
+- Trends Agent: Reports on currently popular movies and TV shows
 
 ## 📝 Example Queries
 
