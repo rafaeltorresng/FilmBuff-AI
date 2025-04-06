@@ -44,3 +44,5 @@ Film Buff is an intelligent assistant for movie and TV show information, built w
 - TMDB API for movie/TV data
 - Gradio for the web interface
 
+![Interface](images/FilmBuff.png)
+

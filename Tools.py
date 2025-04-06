@@ -70,7 +70,7 @@ class IntentClassifierTool(BaseTool):
     def _run(self, query: str):
         query = query.lower()
         
-        if any(pattern in query for pattern in ["tell me about", "information about", "details of", 
+        if any(pattern in query for pattern in ["tell me about", "information about", "details of", "details about", 
                                               "what is", "who is", "synopsis of", "plot of", 
                                               "describe", "rating of", "how long is", "when was", 
                                               "who directed", "who played", "what genre", "rated"]):

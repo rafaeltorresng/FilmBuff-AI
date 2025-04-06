@@ -5,35 +5,37 @@ import json
 import re
 import threading
 from datetime import datetime, timedelta
-# Updated import path to use processor instead of Uptadet_crew
 from Crew import process_film_buff_query, query_cache
 
 VERSION = "1.0.0"  
 LAST_UPDATED = "April 2025"
-
 MAX_TOKENS = 50 
 
 THEME = gr.themes.Soft(
-    primary_hue="indigo",
-    secondary_hue="blue",
-    neutral_hue="slate"
+    primary_hue=gr.themes.colors.indigo,
+    secondary_hue=gr.themes.colors.blue,
+    neutral_hue=gr.themes.colors.gray
 ).set(
-    body_background_fill="linear-gradient(to right, #0f2027, #203a43, #2c5364)",
+    body_background_fill="linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
     block_background_fill="#ffffff",
-    block_label_background_fill="#f7f7f8",
+    block_label_background_fill="#f8fafc",
     block_title_text_color="#ffffff",
     button_primary_background_fill="#4f46e5",
     button_primary_background_fill_hover="#4338ca",
     button_secondary_background_fill="#f3f4f6",
     button_secondary_background_fill_hover="#e5e7eb",
     button_secondary_text_color="#111827",
-    block_radius="15px",
-    button_small_radius="8px"
+    block_radius="16px",
+    button_small_radius="8px",
+    input_background_fill="#f9fafb",
+    input_border_width="1px",
+    input_shadow="0px 2px 4px rgba(0,0,0,0.05)",
+    shadow_spread="8px",
 )
 
 SYSTEM_NAME = "Film Buff"
-SYSTEM_AVATAR = "https://api.dicebear.com/9.x/micah/svg?flip=True"
-USER_AVATAR = "https://api.dicebear.com/9.x/micah/svg?flip=True"
+SYSTEM_AVATAR = "https://api.dicebear.com/9.x/pixel-art/svg?backgroundType=gradientLinear,solid"
+USER_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=FilmBuff&backgroundColor=b6e3f4"
 HISTORY_FILE = "chat_history.json"
 
 EXAMPLES = [
@@ -51,13 +53,11 @@ def count_tokens(text):
         tokens = encoder.encode(text)
         return len(tokens)
     except ImportError:
-        print("tiktoken not installed, falling back to estimation")
         if not text:
             return 0
         words = text.strip().split()
         return len(words) * 4 // 3  
     except Exception as e:
-        print(f"Error counting tokens: {e}")
         return len(text) // 4 
 
 class RateLimiter:
@@ -107,24 +107,12 @@ def load_history():
         return []
 
 def enhance_content(text):
-    # Remove square brackets that appear after titles
     text = re.sub(r"\]\s*-\s*⭐", " - ⭐", text)
-    
-    # Remove standalone square brackets at the end of titles
     text = re.sub(r"(\([0-9]{4}\))\]", r"\1", text)
-    
-    # Bold quoted text
     text = re.sub(r"\"([^\"]+)\"", r"**\1**", text)
-    
-    # Bold ratings
     text = re.sub(r"(\d\.\d\/10)", r"**\1**", text)
-    
-    # Fix TMDb links
     text = text.replace("https://www.themoviedb.org", "[TMDb](https://www.themoviedb.org")
-    
-    # Remove any remaining single square brackets
     text = re.sub(r"(\S)\](\s|$|:)", r"\1\2", text)
-    
     return text
 
 def handle_api_error(error):
@@ -170,20 +158,22 @@ def process_message(message, history):
     ], get_cache_stats(), get_cache_timestamp(), ""
     
     try:
-        # Using process_film_buff_query from processor.py
         response = process_film_buff_query(message)
         
         is_cached = query_cache.get(message) is not None
-        cache_indicator = " (response from cache)" if is_cached else ""
         
         enhanced_response = enhance_content(response)
         
         updated_history = history + [
             {"role": "user", "content": message},
-            {"role": "assistant", "content": enhanced_response + cache_indicator}
+            {"role": "assistant", "content": enhanced_response}
         ]
         
-        yield updated_history, get_cache_stats(), get_cache_timestamp(), ""
+        cache_stats_text = get_cache_stats()
+        if is_cached:
+            cache_stats_text = f"{cache_stats_text} (last response from cache)"
+        
+        yield updated_history, cache_stats_text, get_cache_timestamp(), ""
         
         save_history(updated_history)
         
@@ -237,37 +227,206 @@ def get_rate_limit_status():
     else:
         return f"Rate limit: {calls_left}/{rate_limiter.max_calls} queries available"
 
-# Initialize Gradio interface
 with gr.Blocks(theme=THEME, title=SYSTEM_NAME) as demo:
-    # CSS styling (unchanged)
     gr.HTML("""
     <style>
-    /* CSS code remains unchanged */
+        .header {
+            margin-bottom: 25px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .chatbot-container {
+            border-radius: 16px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+        }
+        
+        .accordion {
+            margin-bottom: 10px !important;
+            border-radius: 8px !important;
+            overflow: hidden !important;
+            box-shadow: none !important;
+            background-color: transparent !important;
+            border: none !important;
+        }
+        
+        .accordion > div:first-child {
+            background-color: rgba(44, 83, 100, 0.7) !important;
+            padding: 10px 15px !important;
+            font-weight: 500 !important;
+            border-bottom: none !important;
+            color: white !important;
+        }
+        
+        .accordion > div:nth-child(2) {
+            padding: 12px !important;
+            background-color: rgba(32, 58, 67, 0.7) !important;
+            color: white !important;
+        }
+        
+        .message-bubble {
+            padding: 12px 18px !important;
+            border-radius: 18px !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sidebar-pattern {
+            background-color: #0f2027;
+            background-image: none;
+            border-radius: 16px;
+            margin-left: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+        }
+        
+        .hollywood-footer {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(5px);
+            border-radius: 16px;
+            margin-top: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .chatbot-container > div > div > div {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #c5c5c5;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+        
+        .modern-input input {
+            border-radius: 12px !important;
+            padding: 12px 18px !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05) !important;
+            border: 1px solid rgba(0, 0, 0, 0.05) !important;
+            transition: all 0.3s ease !important;
+        }
+        
+        .modern-input input:focus {
+            box-shadow: 0 3px 15px rgba(79, 70, 229, 0.15) !important;
+            border: 1px solid rgba(79, 70, 229, 0.3) !important;
+        }
+        
+        .send-button {
+            border-radius: 12px !important;
+            padding: 12px 20px !important;
+            transition: all 0.2s ease !important;
+            transform: translateY(0);
+        }
+        
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3) !important;
+        }
+        
+        .send-button:active {
+            transform: translateY(1px);
+        }
+        
+        .stats-container {
+            background: transparent;
+            border-radius: 0;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .stat-item {
+            margin: 5px 0;
+            padding: 8px 12px;
+            background: transparent;
+            border-radius: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.2);
+            color: #e2e8f0;
+        }
+        
+        .section-title {
+            margin-top: 10px !important;
+            margin-bottom: 8px !important;
+            padding-left: 0 !important;
+            border-left: none !important;
+            font-weight: 500 !important;
+            color: #e2e8f0 !important;
+        }
+        
+        .action-btn {
+            transition: all 0.2s ease !important;
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            border: none !important;
+            color: white !important;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+            background-color: rgba(255, 255, 255, 0.2) !important;
+        }
     </style>
     """)
     
-    # Header section
     with gr.Row(elem_classes="header"):
-        gr.HTML(f"""
+        gr.HTML("""
         <div style="text-align: center; margin-bottom: 5px">
             <div style="display: flex; justify-content: center; align-items: center;">
-                <div style="margin-right: 15px; font-size: 2.5rem;">🎬</div>
+                <div style="margin-right: 20px; font-size: 3rem; animation: pulse 2s infinite ease-in-out;">
+                    <span style="display: inline-block; transform-origin: center;">🎬</span>
+                </div>
                 <div>
-                    <h1 style="margin-bottom: 5px; color: white; font-size: 2.5rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">{SYSTEM_NAME}</h1>
-                    <h3 style="margin: 0; color: #e2e8f0; font-weight: 400;">Your AI-powered movie and TV assistant</h3>
+                    <h1 style="margin-bottom: 8px; color: white; font-size: 2.6rem; font-weight: 700; text-shadow: 0 4px 8px rgba(0,0,0,0.2);">Film Buff</h1>
+                    <p style="margin: 0; color: #e2e8f0; font-weight: 400; font-size: 1.2rem; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        Your AI-powered movie and TV assistant
+                        <span style="display: inline-block; margin-left: 8px; font-size: 1.4rem; animation: wave 2.5s infinite; transform-origin: 70% 70%;">🎥</span>
+                    </p>
                 </div>
             </div>
         </div>
+        <style>
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.05); }
+            }
+            @keyframes wave {
+                0% { transform: rotate(0deg); }
+                10% { transform: rotate(14deg); }
+                20% { transform: rotate(-8deg); }
+                30% { transform: rotate(14deg); }
+                40% { transform: rotate(-4deg); }
+                50% { transform: rotate(10deg); }
+                60% { transform: rotate(0deg); }
+                100% { transform: rotate(0deg); }
+            }
+        </style>
         """)
     
-    # Main section layout
-    with gr.Row(elem_classes="mobile-stack"):
-        # Chatbot column
-        with gr.Column(scale=7, elem_classes="mobile-full"):
+    with gr.Row():
+        with gr.Column(scale=7):
             initial_history = load_history()
             if not initial_history:
                 initial_history = [
-                    {"role": "assistant", "content": f"Hello! I'm {SYSTEM_NAME}, your movies and TV shows assistant. How can I help you today?"}
+                    {"role": "assistant", "content": "Hello! I'm Film Buff, your movies and TV shows assistant. How can I help you today?"}
                 ]
             
             chatbot = gr.Chatbot(
@@ -280,15 +439,21 @@ with gr.Blocks(theme=THEME, title=SYSTEM_NAME) as demo:
                 elem_classes="chatbot-container"
             )
             
-            with gr.Row():
+            with gr.Row(elem_classes="message-input-container"):
                 msg = gr.Textbox(
                     placeholder=f"Ask something about movies or TV shows (max {MAX_TOKENS} tokens)...",
                     show_label=False,
                     container=False,
                     scale=9,
-                    min_width=100
+                    min_width=100,
+                    elem_classes="modern-input"
                 )
-                submit_btn = gr.Button("Send", variant="primary", scale=1)
+                submit_btn = gr.Button(
+                    "Send", 
+                    variant="primary", 
+                    scale=1,
+                    elem_classes="send-button"
+                )
             
             gr.Examples(
                 examples=EXAMPLES,
@@ -299,17 +464,27 @@ with gr.Blocks(theme=THEME, title=SYSTEM_NAME) as demo:
                 examples_per_page=5
             )
         
-        # Sidebar column
-        with gr.Column(scale=3, elem_classes="mobile-full sidebar-pattern"):
+        with gr.Column(scale=3, elem_classes="sidebar-pattern"):
             with gr.Accordion("📊 Statistics & Controls", open=False, elem_classes="accordion"):
-                rate_limit = gr.Markdown(get_rate_limit_status, every=5)
-                cache_stats = gr.Markdown(get_cache_stats())
-                cache_time = gr.Markdown(get_cache_timestamp())
+                with gr.Group(elem_classes="stats-container"):
+                    rate_limit = gr.Markdown(get_rate_limit_status, every=5, elem_classes="stat-item")
+                    cache_stats = gr.Markdown(get_cache_stats(), elem_classes="stat-item")
+                    cache_time = gr.Markdown(get_cache_timestamp(), elem_classes="stat-item")
                 
-                gr.Markdown("### Actions")
+                gr.Markdown("### Actions", elem_classes="section-title")
                 with gr.Row():
-                    clear_chat_btn = gr.Button("🗑️ Clear Chat", variant="secondary", scale=1)
-                    clear_all_btn = gr.Button("🧹 Clear All", variant="secondary", scale=1)
+                    clear_chat_btn = gr.Button(
+                        "🗑️ Clear Chat", 
+                        variant="secondary", 
+                        scale=1,
+                        elem_classes="action-btn"
+                    )
+                    clear_all_btn = gr.Button(
+                        "🧹 Clear All", 
+                        variant="secondary", 
+                        scale=1,
+                        elem_classes="action-btn"
+                    )
             
             with gr.Accordion("🔄 Status", open=False, elem_classes="accordion"):
                 gr.Markdown("""
@@ -343,25 +518,29 @@ with gr.Blocks(theme=THEME, title=SYSTEM_NAME) as demo:
                 - Keep queries concise (max {MAX_TOKENS} tokens)
                 """)
     
-    # Footer
     with gr.Row(elem_classes="hollywood-footer"):
-        gr.HTML(f"""
-        <div style="text-align: center; margin-top: 20px; padding: 10px; color: #a0aec0; font-size: 0.8rem;">
+        gr.HTML("""
+        <div style="text-align: center; margin-top: 20px; padding: 15px; color: #e2e8f0; font-size: 0.9rem;">
             <div style="display: inline-block; padding: 0 30px; position: relative;">
-                {SYSTEM_NAME} v{VERSION} | Last Updated: {LAST_UPDATED} | Built with ❤️ using CrewAI and LLM technology
+                <span style="font-weight: 500;">Film Buff</span> <span style="opacity: 0.8;">v1.0.0</span> 
+                <span style="margin: 0 8px;">•</span> 
+                Last Updated: <span style="font-weight: 500;">April 2025</span>
+                <span style="margin: 0 8px;">•</span>
+                Built with <span style="color: #ff6b6b;">❤️</span> using CrewAI and LLM technology
             </div>
-            <br>Data powered by <a href="https://www.themoviedb.org" target="_blank" style="color: #a0aec0; text-decoration: underline;">The Movie Database (TMDb)</a>
+            <br>
+            <div style="margin-top: 8px; opacity: 0.7;">
+                Data powered by <a href="https://www.themoviedb.org" target="_blank" style="color: #e2e8f0; text-decoration: underline; transition: all 0.2s ease;">The Movie Database (TMDb)</a>
+            </div>
         </div>
         """)
     
-    # Button actions
     msg.submit(process_message, [msg, chatbot], [chatbot, cache_stats, cache_time, msg])
     submit_btn.click(process_message, [msg, chatbot], [chatbot, cache_stats, cache_time, msg])
     
     clear_chat_btn.click(clear_chat_only, None, [chatbot, chatbot, cache_stats, cache_time])
     clear_all_btn.click(clear_history_and_cache, None, [chatbot, chatbot, cache_stats, cache_time])
 
-# Launch with dependency check
 if __name__ == "__main__":
     import subprocess
     import sys
